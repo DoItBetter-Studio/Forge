@@ -2,7 +2,7 @@
 
 > Proprietary Software — DoItBetter Studio
 
-**Glyphborn.Forge** is the audio engine component of the Glyphborn ecosystem.
+**Glyphborn.Forge** is the modeling engine component of the Glyphborn ecosystem.
 
 Development began in August 2025 as part of DoItBetter Studio’s long-term effort to build a modular, deterministic game engine and editor suite.
 
