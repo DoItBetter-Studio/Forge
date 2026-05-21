@@ -208,7 +208,7 @@ namespace Glyphborn.Forge.Controls
 				Cursor = Cursors.Hand;
 				float speed = _distance * 0.002f;
 				Vector3 right = new(MathF.Cos(_yaw + MathF.PI * 0.5f), 0f, MathF.Sin(_yaw + MathF.PI * 0.5f));
-				_target += (right * dx + Vector3.UnitY * dy) * speed;
+				_target += (right * dx + Vector3.UnitY * -dy) * speed;
 			}
 			else if (_orbiting)
 			{
@@ -700,18 +700,34 @@ namespace Glyphborn.Forge.Controls
 				_boneWorldMatrices[i] = EvalBoneMatrix(i, skel);
 		}
 
-		private Matrix4x4 EvalBoneMatrix(int i, SkeletonDocument skel)
+		private Matrix4x4 EvalBoneMatrix(int i, SkeletonDocument skel, HashSet<int>? visited = null)
 		{
+			visited ??= new HashSet<int>();
+
+			// 🚨 cycle detection
+			if (!visited.Add(i))
+				return Matrix4x4.Identity;
+
 			var bone = skel.Bones[i];
-			Vector3 pos; Quaternion rot; Vector3 scl;
+
+			Vector3 pos;
+			Quaternion rot;
+			Vector3 scl;
 
 			if (Mode == ViewportMode.PosePreview && PreviewClip != null)
 				(pos, rot, scl) = PreviewClip.EvaluateBone(i, CurrentFrame, skel);
 			else
 				(pos, rot, scl) = (bone.BindPosition, bone.BindRotation, bone.BindScale);
 
-			var local = Matrix4x4.CreateScale(scl) * Matrix4x4.CreateFromQuaternion(rot) * Matrix4x4.CreateTranslation(pos);
-			return bone.ParentIndex == -1 ? local : EvalBoneMatrix(bone.ParentIndex, skel) * local;
+			var local =
+				Matrix4x4.CreateScale(scl) *
+				Matrix4x4.CreateFromQuaternion(rot) *
+				Matrix4x4.CreateTranslation(pos);
+
+			if (bone.ParentIndex == -1)
+				return local;
+
+			return EvalBoneMatrix(bone.ParentIndex, skel, visited) * local;
 		}
 
 		// =====================================================================
@@ -789,8 +805,8 @@ namespace Glyphborn.Forge.Controls
 					// Fully behind camera — quick reject
 					if (clip[a].Z > 1f && clip[b].Z > 1f && clip[c].Z > 1f) continue;
 
-					// World-space backface cull — CCW winding so Cross(B-A,C-A) is outward normal
-					Vector3 fn = Vector3.Normalize(Vector3.Cross(world[b] - world[a], world[c] - world[a]));
+					// World-space backface cull — CW winding so Cross(C-A,B-A) is outward normal
+					Vector3 fn = Vector3.Normalize(Vector3.Cross(world[c] - world[a], world[b] - world[a]));
 					Vector3 toEye = _eye - world[a];
 					bool facingCamera = Vector3.Dot(fn, toEye) > 0f;
 

@@ -15,4 +15,10 @@
     </Compile>
   </ItemGroup>
 
+	<ItemGroup>
+		<PackageReference Include="AssimpNet" Version="5.0.0-beta1" />
+		<PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
+		<PackageReference Include="SharpGLTF.Runtime" Version="1.0.6" />
+	</ItemGroup>
+
 </Project>

@@ -131,7 +131,7 @@ namespace Glyphborn.Forge.Data
 		{
 			var ab = verts[B].Position - verts[A].Position;
 			var ac = verts[C].Position - verts[A].Position;
-			var cross = Vector3.Cross(ab, ac);
+			var cross = Vector3.Cross(ac, ab);
 			return cross.LengthSquared() > 0f ? Vector3.Normalize(cross) : Vector3.UnitY;
 		}
 	}
@@ -361,8 +361,8 @@ namespace Glyphborn.Forge.Data
 			{
 				int oa = be.A, ob = be.B;
 				int na = oldToNew[oa], nb = oldToNew[ob];
-				Faces.Add(new MeshFace(oa, ob, nb));
-				Faces.Add(new MeshFace(oa, nb, na));
+				Faces.Add(new MeshFace(oa, nb, ob));
+				Faces.Add(new MeshFace(oa, na, nb));
 			}
 
 			// Leave selection on new cap verts
@@ -581,9 +581,9 @@ namespace Glyphborn.Forge.Data
 			float h = size * 0.5f;
 			var s = new MeshSurface { Name = name };
 
-			// 8 unique corners — indices match standard cube layout:
-			//  0:-x-y-z  1:+x-y-z  2:+x+y-z  3:-x+y-z
-			//  4:-x-y+z  5:+x-y+z  6:+x+y+z  7:-x+y+z
+			// 0:-x-y-z  1:+x-y-z  2:+x+y-z  3:-x+y-z
+			// 4:-x-y+z  5:+x-y+z  6:+x+y+z  7:-x+y+z
+
 			s.Vertices.Add(new MeshVertex(new(-h, -h, -h))); // 0
 			s.Vertices.Add(new MeshVertex(new(h, -h, -h))); // 1
 			s.Vertices.Add(new MeshVertex(new(h, h, -h))); // 2
@@ -593,28 +593,33 @@ namespace Glyphborn.Forge.Data
 			s.Vertices.Add(new MeshVertex(new(h, h, h))); // 6
 			s.Vertices.Add(new MeshVertex(new(-h, h, h))); // 7
 
-			// Faces wound CCW as seen from outside (outward normals via right-hand rule)
-			// Front  (-Z)
-			s.Faces.Add(new MeshFace(0, 2, 1));
-			s.Faces.Add(new MeshFace(0, 3, 2));
-			// Back   (+Z)
-			s.Faces.Add(new MeshFace(4, 5, 6));
-			s.Faces.Add(new MeshFace(4, 6, 7));
-			// Left   (-X)
-			s.Faces.Add(new MeshFace(0, 4, 7));
-			s.Faces.Add(new MeshFace(0, 7, 3));
-			// Right  (+X)
-			s.Faces.Add(new MeshFace(1, 2, 6));
-			s.Faces.Add(new MeshFace(1, 6, 5));
+			// Front (-Z)
+			s.Faces.Add(new MeshFace(0, 1, 2));
+			s.Faces.Add(new MeshFace(0, 2, 3));
+
+			// Back (+Z)
+			s.Faces.Add(new MeshFace(5, 4, 7));
+			s.Faces.Add(new MeshFace(5, 7, 6));
+
+			// Left (-X)
+			s.Faces.Add(new MeshFace(4, 0, 3));
+			s.Faces.Add(new MeshFace(4, 3, 7));
+
+			// Right (+X)
+			s.Faces.Add(new MeshFace(1, 5, 6));
+			s.Faces.Add(new MeshFace(1, 6, 2));
+
 			// Bottom (-Y)
-			s.Faces.Add(new MeshFace(0, 1, 5));
-			s.Faces.Add(new MeshFace(0, 5, 4));
-			// Top    (+Y)
-			s.Faces.Add(new MeshFace(3, 7, 6));
-			s.Faces.Add(new MeshFace(3, 6, 2));
+			s.Faces.Add(new MeshFace(4, 5, 1));
+			s.Faces.Add(new MeshFace(4, 1, 0));
+
+			// Top (+Y)
+			s.Faces.Add(new MeshFace(3, 2, 6));
+			s.Faces.Add(new MeshFace(3, 6, 7));
 
 			s.RebuildEdges();
 			s.RecalculateNormals();
+
 			return s;
 		}
 

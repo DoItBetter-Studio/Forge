@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Windows.Forms;
 using Glyphborn.Forge.Controls;
 using Glyphborn.Forge.Data;
+using Glyphborn.Forge.Import;
 using SelectionMode = Glyphborn.Forge.Data.SelectionMode;
 
 namespace Glyphborn.Forge
@@ -85,14 +86,11 @@ namespace Glyphborn.Forge
 
 			SuspendLayout();
 
-
 			Controls.Add(content);      // Fill  — first
 			Controls.Add(_paintStrip);  // Top   — will sit just above Fill
+			Controls.Add(_modeStrip);   // Top   — above paintStrip
+			Controls.Add(_toolStrip);   // Top   — above modeStrip
 			Controls.Add(_menuStrip);   // Top   — topmost
-
-			// Move toolStrip and modeStrip into the 3D viewport as overlays
-			_viewport.Controls.Add(_toolStrip);
-			_viewport.Controls.Add(_modeStrip);
 
 			MainMenuStrip = _menuStrip;
 
@@ -127,6 +125,12 @@ namespace Glyphborn.Forge
 				GripStyle = ToolStripGripStyle.Hidden,
 				Renderer = new DarkToolStripRenderer()
 			};
+			TSBtn(_toolStrip, "New", () => NewProject());
+			TSBtn(_toolStrip, "Open", () => OpenProject());
+			TSBtn(_toolStrip, "Save", () => SaveProject());
+			_toolStrip.Items.Add(new ToolStripSeparator());
+			TSBtn(_toolStrip, "Export…", () => ExportAll());
+			_toolStrip.Items.Add(new ToolStripSeparator());
 			TSBtn(_toolStrip, "Solid", () => SetRender(ViewportRenderMode.Solid));
 			TSBtn(_toolStrip, "Wire", () => SetRender(ViewportRenderMode.Wireframe));
 			TSBtn(_toolStrip, "S+W", () => SetRender(ViewportRenderMode.SolidWireframe));
@@ -222,6 +226,8 @@ namespace Glyphborn.Forge
 			MItem(file, "Open Project…", (_, __) => OpenProject());
 			MItem(file, "Save Project\tCtrl+S", (_, __) => SaveProject());
 			MItem(file, "Save As…", (_, __) => SaveProjectAs());
+			file.DropDownItems.Add(new ToolStripSeparator());
+			MItem(file, "Import Model…", (_, __) => ImportModel());
 			file.DropDownItems.Add(new ToolStripSeparator());
 			MItem(file, "Export All (.gbx)…", (_, __) => ExportAll());
 			file.DropDownItems.Add(new ToolStripSeparator());
@@ -393,16 +399,14 @@ namespace Glyphborn.Forge
 		// Mode / render helpers
 		// =================================================================
 		private void SetMode(ViewportMode mode)
-{
-	_viewport.Mode = mode;
-	_paintStrip.Visible = mode == ViewportMode.WeightPaint;
-	// Ensure viewport receives focus for keyboard/mouse editing
-	_viewport.Focus();
-	bool isEdit = mode == ViewportMode.Edit;
-	if (_btnVertSel != null) _btnVertSel.Enabled = isEdit;
-	if (_btnEdgeSel != null) _btnEdgeSel.Enabled = isEdit;
-	if (_btnFaceSel != null) _btnFaceSel.Enabled = isEdit;
-}
+		{
+			_viewport.Mode = mode;
+			_paintStrip.Visible = mode == ViewportMode.WeightPaint;
+			bool isEdit = mode == ViewportMode.Edit;
+			if (_btnVertSel != null) _btnVertSel.Enabled = isEdit;
+			if (_btnEdgeSel != null) _btnEdgeSel.Enabled = isEdit;
+			if (_btnFaceSel != null) _btnFaceSel.Enabled = isEdit;
+		}
 
 		private void SetSelectionMode(SelectionMode sm)
 		{
@@ -419,7 +423,23 @@ namespace Glyphborn.Forge
 		// =================================================================
 		private void OnFormKeyDown(object? sender, KeyEventArgs e)
 		{
-			if (e.Control && e.KeyCode == Keys.S) { SaveProject(); e.Handled = true; }
+			if (e.Control && e.KeyCode == Keys.S) { SaveProject(); e.Handled = true; return; }
+
+			// Route undo/redo through the viewport so it has access to History
+			if (e.Control && e.KeyCode == Keys.Z)
+			{
+				_viewport.TriggerUndo();
+				UpdateSurfaceList(); // surface list may need refreshing after undo
+				e.Handled = true;
+				return;
+			}
+			if (e.Control && (e.KeyCode == Keys.Y || (e.Shift && e.KeyCode == Keys.Z)))
+			{
+				_viewport.TriggerRedo();
+				UpdateSurfaceList();
+				e.Handled = true;
+				return;
+			}
 		}
 
 		// =================================================================
@@ -723,6 +743,74 @@ namespace Glyphborn.Forge
 					MessageBoxButtons.OK, MessageBoxIcon.Information);
 			}
 			catch (Exception ex) { ShowError(ex.Message); }
+		}
+
+		private void ImportModel()
+		{
+			using var dlg = new OpenFileDialog
+			{
+				Title = "Import Model",
+				Filter = AssimpImporter.FILE_FILTER
+			};
+			if (dlg.ShowDialog() != DialogResult.OK) return;
+
+			try
+			{
+				var result = ModelImporter.Import(dlg.FileName);
+				var imported = new System.Collections.Generic.List<string>();
+
+				// Mesh — append surfaces to current project
+				if (result.HasMesh)
+				{
+					_project.Mesh ??= new MeshDocument(_project.ProjectName);
+					foreach (var surf in result.Mesh!.Surfaces)
+						_project.Mesh.Surfaces.Add(surf);
+					imported.Add($"{result.Mesh.Surfaces.Count} surface(s)");
+				}
+
+				// Skeleton — only set if none exists yet
+				if (result.HasSkeleton)
+				{
+					if (_project.Skeleton == null)
+					{
+						_project.Skeleton = result.Skeleton;
+						imported.Add($"skeleton ({result.Skeleton!.Bones.Count} bones)");
+					}
+					else
+					{
+						imported.Add("skeleton skipped (project already has one)");
+					}
+				}
+
+				// Animation — append clips to existing animation document
+				if (result.HasAnimation)
+				{
+					if (_project.Animation == null)
+					{
+						_project.Animation = result.Animation;
+					}
+					else
+					{
+						foreach (var clip in result.Animation!.Clips)
+							_project.Animation.Clips.Add(clip);
+					}
+					imported.Add($"{result.Animation!.Clips.Count} clip(s)");
+				}
+
+				RefreshAll();
+				_project.History.Clear(); // imported geometry shouldn't be undone away
+
+				string summary = imported.Count > 0
+					? string.Join(", ", imported)
+					: "nothing (file may be empty)";
+
+				MessageBox.Show($"Imported: {summary}", "Import Complete",
+					MessageBoxButtons.OK, MessageBoxIcon.Information);
+			}
+			catch (Exception ex)
+			{
+				ShowError($"Import failed:\n{ex.Message}");
+			}
 		}
 
 		// =================================================================
